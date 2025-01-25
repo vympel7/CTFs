@@ -5,30 +5,32 @@ from pwn import *
 from cryptils.attacks.block_ciphers.aes.ecb import chosen_prefix
 
 
-def blocks(data: bytes, num=-1):
+def blocks(data: bytes, num: int = -1):
     arr = [data[i:i+16] for i in range(0, len(data), 16)]
     if 0 <= num < len(arr):
         return arr[num]
     return arr
 
-def encrypt(r, msg: bytes):
+def encrypt(r, msg: bytes, block: int = -1):
     r.sendlineafter(b'x) ', msg.hex().encode())
     r.recvuntil(b'n:\n|\n|   ')
-    return bytes.fromhex(r.recvline().rstrip().decode())
-
+    ct = bytes.fromhex(r.recvline().rstrip().decode())
+    if 0 <= block < len(ct) // 16:
+        return ct[16*block:16*(block + 1)]
+    return ct
 
 def dec0(r):
-    msg = os.urandom(16)
-    enc_msg = encrypt(r, msg)[16:32]
+    msg1 = os.urandom(16)
+    enc_msg1 = encrypt(r, msg1, 1)
     msg2 = os.urandom(16)
-    enc_msg2 = encrypt(r, msg2)[16:32]
-    val = xor(enc_msg2, msg)
+    enc_msg2 = encrypt(r, msg2, 1)
+    val = xor(enc_msg2, msg1)
 
-    ct3 = blocks(encrypt(r, enc_msg + msg + msg2), 3)
+    ct3 = encrypt(r, enc_msg1 + msg1 + msg2, 3)
 
     d0 = xor(ct3, val)
 
-    assert encrypt(r, d0)[16:32] == b'\x00'*16
+    assert encrypt(r, d0, 1) == b'\x00'*16
 
     return d0
 
@@ -40,77 +42,26 @@ def main():
 
     D0 = dec0(r)
 
-    F1 = b'srdnlen{I_h0p3_t'
-    Fr = ct_flag[0]
+    flag = chosen_prefix(lambda b: encrypt(r, b, 1), string.printable, length=16)
+    curr, prev = flag, ct_flag[0]
 
-    # E(F2)# {{{
-    Ef1 = encrypt(r, F1)[16:32]
+    for i in range(2, 5):
+        ct3 = encrypt(r, prev + curr + D0, 3)
+        enc_next = xor(ct_flag[i], ct3)
 
-    data = blocks(encrypt(r, b'\x00'*32 + Fr + F1))
-    Fc1 = xor(data[5], xor(Ef1, F1))
+        msg = os.urandom(16)
+        enc_msg = encrypt(r, msg, 1)
+        enc = encrypt(r, enc_next + D0 + msg, 3)
 
-    Ef2 = xor(ct_flag[2], xor(Fc1, F1))
-    # }}}
-    # F2# {{{
-    msg = os.urandom(16)
-    enc_msg = encrypt(r, msg)[16:32]
-    enc = encrypt(r, Ef2 + D0 + msg)
-    ct3 = blocks(enc, 3)
-    F2 = xor(ct3, xor(enc_msg, D0))
-    # }}}
-    F2 = b'h15_Gl4ss_0f_M1r'
+        prev = curr
+        curr = xor(enc, xor(enc_msg, D0))
 
-    # E(F3)# {{{
-    ct3 = blocks(encrypt(r, F1 + F2 + D0), 3)
-    Fc2 = xor(ct3, F2)
+        flag += curr
 
-    Ef3 = xor(ct_flag[3], xor(Fc2, F2))
-    # }}}
-    # F3# {{{
-    msg = os.urandom(16)
-    enc_msg = encrypt(r, msg)[16:32]
-    enc = encrypt(r, Ef3 + D0 + msg)
-    ct3 = blocks(enc, 3)
-    F3 = xor(ct3, xor(enc_msg, D0))
-    #}}}
-    F3 = b't0_w4rm3d_y0u_3n'
-
-    # E(F4)# {{{
-    ct3 = blocks(encrypt(r, F2 + F3 + D0), 3)
-    Fc3 = xor(ct3, F3)
-
-    Ef4 = xor(ct_flag[4], xor(Fc3, F3))
-    # }}}
-    # F3# {{{
-    msg = os.urandom(16)
-    enc_msg = encrypt(r, msg)[16:32]
-    enc = encrypt(r, Ef4 + D0 + msg)
-    ct3 = blocks(enc, 3)
-    F4 = xor(ct3, xor(enc_msg, D0))
-    #}}}
-    F4 = b'0ugh}'
-
-    print(F1 + F2 + F3 + F4)
-
-    r.close()
-
-def main2():
-    r = remote('confusion.challs.srdnlen.it', 1338) if args.REMOTE else process('./chall.py') 
-
-    def encrypt(msg: bytes):
-        r.sendlineafter(b'x) ', msg.hex().encode())
-        r.recvuntil(b'n:\n|\n|   ')
-        return bytes.fromhex(r.recvline().rstrip().decode())[16:32]
-
-    r.recvuntil(b' = ')
-    ct_flag = blocks(bytes.fromhex(r.recvline().rstrip().decode()))
-
-    D0 = dec0(r)
-    F1 = chosen_prefix(encrypt, string.printable, length=16, print_partial=True)
-
+    print(unpad(flag, 16).decode())
 
     r.close()
 
 if __name__ == '__main__':
     context.log_level = 'error'
-    main2()
+    main()
