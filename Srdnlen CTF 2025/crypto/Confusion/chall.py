@@ -5,7 +5,7 @@ from Crypto.Util.Padding import pad, unpad
 import os
 
 # Local imports
-FLAG = os.getenv("FLAG", "srdnlen{I_h0p3_th15_Gl4ss_0f_M1rt0_w4rm3d_y0u_3n0ugh}").encode()
+FLAG = os.getenv("FLAG", "srdnlen{REDACTED}").encode()
 
 # Server encryption function
 def encrypt(msg, key):
