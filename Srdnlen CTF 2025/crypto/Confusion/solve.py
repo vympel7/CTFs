@@ -1,15 +1,10 @@
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
-import os, string
-from pwn import *
 from cryptils.attacks.block_ciphers.aes.ecb import chosen_prefix
+from cryptils.utils import blockify
+from Crypto.Util.Padding import unpad
+from Crypto.Cipher import AES
+from pwn import *
+import os, string
 
-
-def blocks(data: bytes, num: int = -1):
-    arr = [data[i:i+16] for i in range(0, len(data), 16)]
-    if 0 <= num < len(arr):
-        return arr[num]
-    return arr
 
 def encrypt(r, msg: bytes, block: int = -1):
     r.sendlineafter(b'x) ', msg.hex().encode())
@@ -38,14 +33,14 @@ def main():
     r = remote('confusion.challs.srdnlen.it', 1338) if args.REMOTE else process('./chall.py') 
 
     r.recvuntil(b' = ')
-    ct_flag = blocks(bytes.fromhex(r.recvline().rstrip().decode()))
+    ct_flag = blockify(bytes.fromhex(r.recvline().rstrip().decode()))
 
     D0 = dec0(r)
 
     flag = chosen_prefix(lambda b: encrypt(r, b, 1), string.printable, length=16)
     curr, prev = flag, ct_flag[0]
 
-    for i in range(2, 5):
+    for i in range(2, len(ct_flag)):
         ct3 = encrypt(r, prev + curr + D0, 3)
         enc_next = xor(ct_flag[i], ct3)
 
@@ -58,7 +53,7 @@ def main():
 
         flag += curr
 
-    print(unpad(flag, 16).decode())
+    print('flag:', unpad(flag, 16).decode())
 
     r.close()
 
